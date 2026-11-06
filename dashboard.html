@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Phobia</title>
+<style>
+:root{--bg:#f2f2f3;--panel:#fff;--line:#d8d8dc;--text:#1b1b1e;--muted:#6a6a72;--ink:#3a3a40;--ok:#2f7d4f;--bad:#b3372f;--wait:#8a6d1f;
+--font:ui-sans-serif,-apple-system,"Segoe UI",Roboto,Arial,sans-serif;--mono:ui-monospace,Menlo,Consolas,monospace}
+*{box-sizing:border-box}html,body{margin:0}
+body{background:var(--bg);color:var(--text);font:15px/1.5 var(--font);min-height:100vh}
+main{max-width:940px;margin:0 auto;padding:20px 16px 48px}
+header{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:20px}
+h1{font-size:30px;letter-spacing:-.03em;margin:0}h2{font-size:15px;margin:0 0 12px}
+.net{font-size:13px;color:var(--muted);display:flex;gap:6px;align-items:center}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--muted)}.on .dot{background:var(--ok)}.off .dot{background:var(--bad)}
+.grid{display:grid;gap:16px}@media(min-width:760px){.grid{grid-template-columns:1fr 1fr}.wide{grid-column:1/-1}}
+section{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:16px}
+textarea,input{width:100%;border:1px solid var(--line);border-radius:6px;padding:10px;font:13px/1.4 var(--mono);background:#fafafa;color:var(--text)}
+textarea{min-height:110px;resize:vertical}
+:focus-visible{outline:2px solid var(--ink);outline-offset:1px}
+.row{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;align-items:center}
+button{font:inherit;font-weight:600;border:1px solid var(--ink);background:var(--ink);color:#fff;border-radius:6px;padding:8px 14px;cursor:pointer}
+button.ghost{background:transparent;color:var(--ink);border-color:var(--line)}button:disabled{opacity:.5}
+.hint{font-size:13px;color:var(--muted);margin:0 0 10px}
+.msg{font-size:13px;min-height:20px;margin-top:8px}.ok{color:var(--ok)}.bad{color:var(--bad)}.wait{color:var(--wait)}
+dl{margin:0;display:grid;grid-template-columns:auto 1fr;gap:8px 16px;font-size:14px}dt{color:var(--muted)}dd{margin:0;text-align:right}
+ul{list-style:none;margin:0;padding:0;font:13px/1.4 var(--mono);max-height:240px;overflow:auto}
+li{padding:6px 0;border-top:1px solid var(--line)}li:first-child{border-top:0}li time{color:var(--muted);margin-right:8px}
+#login{max-width:360px;margin:12vh auto 0}
+[hidden]{display:none!important}
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Phobia</h1>
+    <div id="net" class="net"><span class="dot"></span><span id="netText">Checking connection</span></div>
+  </header>
+
+  <section id="login" hidden>
+    <h2>Dashboard password</h2>
+    <input id="pw" type="password" autocomplete="current-password" placeholder="Password">
+    <div class="row"><button id="loginBtn">Log in</button></div>
+    <div id="loginMsg" class="msg" role="status"></div>
+  </section>
+
+  <div id="app" class="grid" hidden>
+    <section>
+      <h2>Facebook cookie</h2>
+      <p class="hint">Paste a cookie header or an appstate JSON. It is kept in the bot's memory only. After a restart, paste it again.</p>
+      <textarea id="cookie" spellcheck="false" autocomplete="off" placeholder="c_user=...; xs=...; datr=...  or  [{&quot;key&quot;:&quot;c_user&quot;,...}]"></textarea>
+      <div class="row"><button id="send">Connect session</button><button id="clearCookie" class="ghost">Remove session</button></div>
+      <div id="cookieMsg" class="msg" role="status"></div>
+    </section>
+
+    <section>
+      <h2>Admin IDs</h2>
+      <p class="hint">Numeric Messenger user IDs allowed to use the on/off commands. Separate with commas or new lines.</p>
+      <textarea id="admins" spellcheck="false" placeholder="100012345678901"></textarea>
+      <div class="row"><button id="saveAdmins">Save admin IDs</button></div>
+      <div id="adminMsg" class="msg" role="status"></div>
+    </section>
+
+    <section>
+      <h2>Status</h2>
+      <dl>
+        <dt>Facebook session</dt><dd id="sFb">-</dd>
+        <dt>Processing</dt><dd id="sProc">-</dd>
+        <dt>Login</dt><dd id="sLogin">-</dd>
+        <dt>Uptime</dt><dd id="sUp">-</dd>
+        <dt>Node</dt><dd id="sNode">-</dd>
+        <dt>Memory</dt><dd id="sMem">-</dd>
+      </dl>
+      <div class="row"><button id="resume" class="ghost">Resume</button><button id="pause" class="ghost">Pause</button><button id="logout" class="ghost">Log out</button></div>
+    </section>
+
+    <section>
+      <h2>Recent activity</h2>
+      <ul id="log"><li>Nothing yet.</li></ul>
+    </section>
+  </div>
+</main>
+
+<script>
+const $=id=>document.getElementById(id);
+let token=''; try{token=sessionStorage.getItem('phobia_token')||''}catch(_){}
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+function say(id,t,k){const e=$(id);e.textContent=t;e.className='msg '+(k||'')}
+
+async function api(path,method,body){
+  const r=await fetch(path,{method:method||'GET',cache:'no-store',
+    headers:{'Content-Type':'application/json','X-Phobia-Token':token},
+    body:body===undefined?undefined:JSON.stringify(body)});
+  let d={};try{d=await r.json()}catch(_){}
+  if(r.status===401&&d.login_required){showLogin();throw new Error('Please log in again.')}
+  if(!r.ok)throw new Error(d.error||('Request failed ('+r.status+')'));
+  return d;
+}
+function showLogin(){token='';try{sessionStorage.removeItem('phobia_token')}catch(_){}
+  $('login').hidden=false;$('app').hidden=true}
+function showApp(){$('login').hidden=true;$('app').hidden=false;loadAdmins();refresh()}
+
+$('loginBtn').onclick=async()=>{
+  if(!navigator.onLine){say('loginMsg','You are offline.','wait');return}
+  say('loginMsg','Checking...','wait');
+  try{
+    const r=await fetch('/api/phobia/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({password:$('pw').value})});
+    const d=await r.json().catch(()=>({}));
+    if(!r.ok)throw new Error(d.error||'Login failed');
+    token=d.token;try{sessionStorage.setItem('phobia_token',token)}catch(_){}
+    $('pw').value='';say('loginMsg','');showApp();
+  }catch(e){say('loginMsg',e.message,'bad')}
+};
+$('pw').addEventListener('keydown',e=>{if(e.key==='Enter')$('loginBtn').click()});
+$('logout').onclick=async()=>{try{await api('/api/phobia/logout','POST',{})}catch(_){}showLogin()};
+
+function parseCookie(raw){
+  raw=raw.trim();if(!raw)return'Paste a cookie first.';
+  let has=/(^|;\s*)c_user=/.test(raw);
+  if(raw[0]==='['||raw[0]==='{'){try{has=/"c_user"/.test(raw)&&JSON.parse(raw)!=null}catch(_){return'That JSON is not valid.'}}
+  return has?'':'Missing c_user. Export the cookies again while logged in.';
+}
+$('send').onclick=async()=>{
+  if(!navigator.onLine){say('cookieMsg','You are offline. Reconnect to send the session.','wait');return}
+  const err=parseCookie($('cookie').value);if(err){say('cookieMsg',err,'bad');return}
+  $('send').disabled=true;say('cookieMsg','Sending...','wait');
+  try{await api('/api/dashboard/session','POST',{cookie:$('cookie').value.trim()});
+    say('cookieMsg','Session accepted. Validating the login now.','ok');$('cookie').value='';setTimeout(refresh,3000)}
+  catch(e){say('cookieMsg',e.message,'bad')}
+  $('send').disabled=false;
+};
+$('clearCookie').onclick=async()=>{try{await api('/api/dashboard/session','DELETE');say('cookieMsg','Session removed.','ok')}catch(e){say('cookieMsg',e.message,'bad')}};
+
+async function loadAdmins(){try{const d=await api('/api/dashboard/admins');$('admins').value=(d.admin_ids||[]).join('\n')}catch(_){}}
+$('saveAdmins').onclick=async()=>{
+  try{const d=await api('/api/dashboard/admins','POST',{admin_ids:$('admins').value});
+    $('admins').value=d.admin_ids.join('\n');say('adminMsg','Saved '+d.admin_ids.length+' admin ID(s).','ok')}
+  catch(e){say('adminMsg',e.message,'bad')}
+};
+
+const up=s=>{s=Math.floor(s||0);return Math.floor(s/3600)+'h '+Math.floor(s%3600/60)+'m'};
+async function refresh(){
+  if(!navigator.onLine||$('app').hidden)return;
+  try{
+    const s=await api('/api/dashboard/status');
+    $('sFb').textContent=s.facebook_connected?'Connected':'Not connected';
+    $('sProc').textContent=s.bot_paused?'Paused':(s.bot_running?'Running':'Idle');
+    $('sLogin').textContent=s.login_in_progress?'In progress':(s.login_error?'Error':'OK');
+    $('sUp').textContent=up(s.uptime_seconds);$('sNode').textContent=s.node_version||'-';
+    $('sMem').textContent=s.memory&&s.memory.rss?Math.round(s.memory.rss/1048576)+' MB':'-';
+    const e=await api('/api/dashboard/events');
+    if(e.events&&e.events.length)$('log').innerHTML=e.events.slice(0,30).map(x=>'<li><time>'+esc(new Date(x.at).toLocaleTimeString())+'</time>'+esc(x.type)+'</li>').join('');
+  }catch(_){}
+}
+$('resume').onclick=async()=>{try{await api('/api/dashboard/bot/start','POST',{});refresh()}catch(_){}};
+$('pause').onclick=async()=>{try{await api('/api/dashboard/bot/stop','POST',{});refresh()}catch(_){}};
+
+function net(){const on=navigator.onLine;$('net').className='net '+(on?'on':'off');
+  $('netText').textContent=on?'Online':'Offline. Showing saved dashboard'}
+addEventListener('online',()=>{net();refresh()});addEventListener('offline',net);net();
+setInterval(refresh,15000);
+if('serviceWorker' in navigator)navigator.serviceWorker.register('/sw.js').catch(()=>{});
+
+(async()=>{ if(!token){showLogin();return}
+  try{await api('/api/dashboard/admins');showApp()}catch(_){ if(!navigator.onLine){$('app').hidden=false}else showLogin() } })();
+</script>
+</body>
+</html>
